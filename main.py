@@ -80,12 +80,10 @@ def download_img(card_info, download_directory: Path):
 def main():
     arg_parser = ArgumentParser()
     arg_parser.add_argument('card_store',
-                            required=True,
                             type=Path,
                             help='Directory used to download card images and image batches')
 
     arg_parser.add_argument('results',
-                            required=True,
                             type=Path,
                             help='Directory used to store results, such as the model file and debugged results')
 
