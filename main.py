@@ -66,7 +66,7 @@ def download_img(card_info, download_directory: Path):
         'download' / (card_info[0] + '.jpg')
     if not save_location.exists():
         response = requests.get(url)
-        with save_location.open('wb') as jpg_fp:
+        with save_location.open('wb+') as jpg_fp:
             jpg_fp.write(response.content)
             logger.info("Downloaded %s to %s", url, save_location)
     else:
