@@ -299,7 +299,7 @@ def train_batch(model, batch_idx, img, criterion, optimizer, dataset_len, gt_wri
 
 
 def start_training(cache_location: Path, results_dir: Path, batch_size: int):
-    use_amp = False
+    use_amp = True
     model = CNNAE(use_amp)
 
     if torch.cuda.is_available():
@@ -311,8 +311,9 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
     cache_post_name = 'byte'
 
     if torch.cuda.is_available() and use_amp:
+        logger.info('Using amp to train model down')
         model, optimizer = amp.initialize(
-            model, optimizer, opt_level='O1', loss_scale=16.0)
+            model, optimizer, opt_level='O1')
     else:
         model_name = f'{model_name}_vae_noamp'
         cache_post_name = 'float'
