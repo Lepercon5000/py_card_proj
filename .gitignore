@@ -1,0 +1,7 @@
+*.pth
+*.json
+
+__pycache__\*
+set
+set_layout_sample
+.vs
