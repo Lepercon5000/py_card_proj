@@ -37,7 +37,7 @@ def download_cards_db(download_location: Path):
 
 
 def read_cards_db(download_location: Path):
-    with download_location.open('r') as cards_db_fp:
+    with download_location.open('r', encoding='utf8', errors='ignore') as cards_db_fp:
         cards = json.load(cards_db_fp)
 
     logger.info('finished reading db file from scryfall')
@@ -99,7 +99,7 @@ def main():
                             type=int,
                             default=300,
                             help=('Default assumes ~11Gigabytes of GPU memory.'
-                                  'You\'ll want to enter (number of gigabytes on GPU) * 109 as this '
+                                  'You\'ll want to enter (number of gigabytes on GPU) * 27 as this '
                                   'will allocate the approprate batch size to maximize the GPU'))
 
     args = arg_parser.parse_args()
