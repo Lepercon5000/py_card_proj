@@ -103,22 +103,25 @@ def main():
                                   'will allocate the approprate batch size to maximize the GPU'))
 
     args = arg_parser.parse_args()
+    from pprint import pprint
 
-    card_store = args['card_store']
+    pprint(args)
+
+    card_store = args.card_store
     db_file_location = db_filepath(card_store)
 
-    if args['get_scry_db']:
+    if args.get_scry_db:
         download_cards_db(db_file_location)
 
-    if args['dl_imgs']:
+    if args.dl_imgs:
         cards = read_cards_db(db_file_location)
         for card in get_img_uris(cards):
             download_img(card, card_store)
 
     net.start_training(
         card_store,
-        args['results'],
-        args['batch_size'])
+        args.results,
+        args.batch_size)
 
     logger.info('finished training')
 
