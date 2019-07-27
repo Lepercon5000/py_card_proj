@@ -133,6 +133,7 @@ class MyDatasetCacheLoader(torch.utils.data.Dataset):
                 if use_file:
                     file_bytes = full_path
                 else:
+                    logger.info('Writing sub cache vector to %s', full_path)
                     with open(full_path, 'rb') as fp:
                         file_bytes = io.BytesIO(bytes(fp.read()))
                 self._cached_files[idx] = (file_path, file_bytes)
@@ -164,7 +165,7 @@ class MyDatasetCacheLoader(torch.utils.data.Dataset):
         if self.transform is not None:
             img = self.transform(img)
 
-        with open(cached_file, 'wb') as fp:
+        with open(cached_file, 'wb+') as fp:
             torch.save(img, fp)
 
         return img
@@ -232,7 +233,7 @@ class BatchCacheLoader:
                     cache_path, f'{idx}.{batch_ext_name}')
                 if not os.path.exists(batch_path):
                     logger.info('Writing Batch Cache to %s', batch_path)
-                    with open(batch_path, 'wb') as cp:
+                    with open(batch_path, 'wb+') as cp:
                         torch.save(data, cp)
                 self._total_len += 1
         else:
@@ -320,7 +321,7 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
     data_transforms = transforms.Compose(model.get_transforms(use_amp))
 
     cards_dataset = MyDatasetCacheLoader(
-        path=str(cache_location),
+        path=str(cache_location / 'cards' / 'download'),
         transform=data_transforms,
         use_file=False,
         cache_post_name=cache_post_name)
@@ -331,10 +332,17 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
         shuffle=False,
         num_workers=0)
 
+    batch_cache_loader_location = Path(cache_location / 'card_store' / 'cards' /
+                                       'download' / f'_batch_cache_{batch_size}_')
+
+    from pprint import pprint
+    pprint(batch_cache_loader_location)
+
+    batch_cache_loader_location.mkdir(parents=True, exist_ok=True)
+
     dataset_loader = BatchCacheLoader(
         dataset_loader,
-        cache_location / 'card_store' / 'cards' /
-        'download' / f'_batch_cache_{batch_size}_',
+        str(batch_cache_loader_location),
         None,
         use_amp)
 
@@ -386,7 +394,7 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
                         gt_written = True
                     else:
                         gt_written = True
-                img_path = img_name_template.format(epoch)
+                img_path = results_dir / img_name_template.format(epoch)
                 torchvision.utils.save_image(pic, img_path)
                 torch.save(model.state_dict(), model_path)
             epoch += 1
