@@ -15,6 +15,8 @@ from torch import nn, optim
 from torch.autograd import Variable
 from torchvision import transforms
 from pathlib import Path
+from tqdm import tqdm
+from statistics import mean
 
 import cv2
 logger = logging.getLogger(__name__)
@@ -254,21 +256,27 @@ class BatchCacheLoader:
                 can_use_cached_tensor = True
             self._cache_data.append((file_bytes, can_use_cached_tensor))
 
+    def _transform_based_on_amp(self, tensor_data):
+        return tensor_data
+        # if self._using_amp:
+        #     return tensor_data.half()
+        # else:
+        #     return tensor_data.float()
+
     def get_batch(self, idx):
         (op, can_use_cached_tensor) = self._cache_data[idx]
         if not can_use_cached_tensor:
             with open(op, 'rb') as cp:
-                return torch.load(cp)
+                return self._transform_based_on_amp(
+                    torch.load(cp))
         else:
             if op is not None:
                 op.seek(0, 0)
                 tensor_data = torch.load(op)
                 op.close()
                 self._cache_data[idx] = (None, can_use_cached_tensor)
-                if self._using_amp:
-                    self._cached_tensors[idx] = tensor_data.half()
-                else:
-                    self._cached_tensors[idx] = tensor_data.float()
+                self._cached_tensors[idx] = self._transform_based_on_amp(
+                    tensor_data)
 
             self._cached_tensors[idx].pin_memory()
             return self._cached_tensors[idx]
@@ -281,11 +289,11 @@ class BatchCacheLoader:
 
 
 def train_batch(model, batch_idx, img, criterion, optimizer, dataset_len, gt_written, using_amp=True):
-    img = img.cuda(non_blocking=True).requires_grad_()
+    img = img.cuda(non_blocking=True).half().requires_grad_()
     output = model(img)
     loss = criterion(output, img)
-    logger.info('Train Step [{}/{}] ({:.0f}%)'.format(batch_idx,
-                                                      dataset_len, float(batch_idx * 100.0 / dataset_len)))
+    # logger.info('Train Step [{}/{}] ({:.0f}%)'.format(batch_idx,
+    #                                                   dataset_len, float(batch_idx * 100.0 / dataset_len)))
     optimizer.zero_grad()
     if using_amp:
         with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -294,8 +302,8 @@ def train_batch(model, batch_idx, img, criterion, optimizer, dataset_len, gt_wri
     optimizer.step()
 
     if batch_idx == (dataset_len - 1):
-        return loss.data, img, output.data.cpu()
-    return loss.data, None, None
+        return loss.item(), img, output.data.cpu()
+    return loss.item(), None, None
 
 
 def start_training(cache_location: Path, results_dir: Path, batch_size: int):
@@ -313,7 +321,7 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
     if torch.cuda.is_available() and use_amp:
         logger.info('Using amp to train model down')
         model, optimizer = amp.initialize(
-            model, optimizer, opt_level='O1')
+            model, optimizer, opt_level='O1', loss_scale=8.0)
     else:
         model_name = f'{model_name}_vae_noamp'
         cache_post_name = 'float'
@@ -324,7 +332,7 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
     cards_dataset = MyDatasetCacheLoader(
         path=str(cache_location / 'cards' / 'download'),
         transform=data_transforms,
-        use_file=False,
+        use_file=True,
         cache_post_name=cache_post_name)
 
     dataset_loader = torch.utils.data.DataLoader(
@@ -358,28 +366,29 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
 
     if isinstance(model, CNNAE):
         epoch = 0
-        dataset_size = int(len(cards_dataset) / batch_size)
+        dataset_size = len(dataset_loader)
         while epoch < 10000:
             model.train()
+            train_results = list(tqdm((train_batch(model,
+                                                   batch_idx,
+                                                   img,
+                                                   criterion,
+                                                   optimizer,
+                                                   dataset_size,
+                                                   gt_written,
+                                                   use_amp) for (batch_idx, img) in enumerate(dataset_loader)),
+                                      total=dataset_size
+                                      ))
 
-            train_batches_itr = (train_batch(model,
-                                             batch_idx,
-                                             img,
-                                             criterion,
-                                             optimizer,
-                                             dataset_size,
-                                             gt_written,
-                                             use_amp) for (
-                batch_idx, img) in enumerate(dataset_loader))
-
-            train_results = list(train_batches_itr)
             cuda_img, output = next(((input_img, output_img) for (
                 _, input_img, output_img) in train_results if output_img is not None))
-            loss_results = torch.stack(
-                tuple((loss_result for (loss_result, _, _) in train_results)), 0)
-            average_loss = loss_results.mean().item()
-            max_loss = loss_results.max().item()
-            min_loss = loss_results.min().item()
+
+            loss_results = [loss_result for (
+                loss_result, _, _) in train_results]
+
+            average_loss = mean(iter(loss_results))
+            max_loss = max(iter(loss_results))
+            min_loss = min(iter(loss_results))
 
             logger.info('epoch [{}/{}]\tMin-Loss:{:.3f}\tAvg-Loss:{:.3f}\tMax-Loss{:.3f}'
                         .format(epoch+1, 100, min_loss, average_loss, max_loss))
@@ -391,7 +400,8 @@ def start_training(cache_location: Path, results_dir: Path, batch_size: int):
                     if not gt_img_path.exists():
                         gt_pic = cuda_img.cpu().data[:10]
                         gt_pic = torch.div(gt_pic.float(), 255.0)
-                        torchvision.utils.save_image(gt_pic, str(gt_img_path))
+                        torchvision.utils.save_image(
+                            gt_pic, str(gt_img_path))
                         gt_written = True
                     else:
                         gt_written = True

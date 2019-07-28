@@ -7,6 +7,7 @@ import net
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
+from tqdm import tqdm
 
 
 root = logging.getLogger()
@@ -69,13 +70,9 @@ def download_img(card_info, download_directory: Path):
         response = requests.get(url)
         with save_location.open('wb+') as jpg_fp:
             jpg_fp.write(response.content)
-            logger.info("Downloaded %s to %s", url, save_location)
     else:
         if card_info[2] != 'en':
             os.remove(str(save_location))
-            logger.info("Deleted %s", save_location)
-        else:
-            logger.info("Skipping %s", url)
 
 
 def main():
@@ -116,8 +113,13 @@ def main():
 
     if args.dl_imgs:
         cards = read_cards_db(db_file_location)
-        for card in get_img_uris(cards):
-            download_img(card, card_store)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(download_img, card, card_store)
+                       for card in get_img_uris(cards)]
+
+            for _future in tqdm(as_completed(futures), unit_scale=True, smoothing=0.01, total=len(cards), desc='cards download progress'):
+                pass
 
     net.start_training(
         card_store,
